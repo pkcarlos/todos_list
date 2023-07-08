@@ -92,6 +92,7 @@ post "/lists" do
 end
 
 get "/lists/:id" do
+  redirect "/lists" if params[:id].nil?
   @list_id = params[:id].to_i
   @list = session[:lists][@list_id]
  erb :list, layout: :layout
