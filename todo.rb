@@ -29,8 +29,8 @@ helpers do
   def sort_lists(lists, &block)
     complete_lists, incomplete_lists = lists.partition { |list| list_complete?(list) }
 
-    incomplete_lists.each { |list| yield list, lists.index(list) }
-    complete_lists.each { |list| yield list, lists.index(list) }
+    incomplete_lists.each(&block)
+    complete_lists.each(&block)
   end
 
   def sort_todos(todos, &block)
@@ -41,12 +41,39 @@ helpers do
   end
 end
 
-def load_list(index)
-  list = session[:lists][index] if index && session[:lists][index]
+def load_list(id)
+  list = session[:lists].find{ |list| list[:id] == id}
   return list if list
 
   session[:error] = "The specified list was not found."
   redirect "/lists"
+end
+
+# returns error message if list name invalid; return nil if name is valid
+def error_for_list_name(name)
+  if !(1..100).cover? name.size
+    "List name must be between 1 and 100 characters."
+  elsif session[:lists].any? {|list| list[:name] == name }
+    "List name already exists."
+  end
+end
+
+# returns error message if todo name invalid; return nil if name is valid
+def error_for_todo(name)
+  if !(1..100).cover? name.size
+    "To-do must be between 1 and 100 characters."
+  end
+end
+
+
+def next_todo_id(todos)
+  max = todos.map { |todo| todo[:id] }.max || 0
+  max + 1
+end
+
+def next_element_id(elements)
+  max = elements.map { |element| element[:id] }.max || 0
+  max + 1
 end
 
 before do
@@ -68,22 +95,6 @@ get "/lists/new" do
   erb :new_list, layout: :layout
 end
 
-# returns error message if list name invalid; return nil if name is valid
-def error_for_list_name(name)
-  if !(1..100).cover? name.size
-    "List name must be between 1 and 100 characters."
-  elsif session[:lists].any? {|list| list[:name] == name }
-    "List name already exists."
-  end
-end
-
-# returns error message if todo name invalid; return nil if name is valid
-def error_for_todo(name)
-  if !(1..100).cover? name.size
-    "To-do must be between 1 and 100 characters."
-  end
-end
-
 # create new list
 post "/lists" do
   list_name = params[:list_name].strip
@@ -93,7 +104,8 @@ post "/lists" do
     session[:error] = error
     erb :new_list, layout: :layout
   else
-    session[:lists] << {name: list_name, todos: []}
+    id = next_element_id(session[:lists])
+    session[:lists] << {id: id, name: list_name, todos: []}
     session[:success] = "The list has been created."
     redirect "/lists"
   end
@@ -101,8 +113,11 @@ end
 
 # view single todo list
 get "/lists/:id" do
-  @list_id = params[:id].to_i
-  @list = load_list(@list_id)
+  id = params[:id].to_i
+  @list = load_list(id)
+  @list_name = @list[:name]
+  @list_id = @list[:id]
+  @todos = @list[:todos]
   erb :list, layout: :layout
 end
 
@@ -134,18 +149,13 @@ end
 # delete a todo list
 post "/lists/:id/delete" do
   id = params[:id].to_i
-  session[:lists].delete_at(id)
+  session[:lists].delete_if { |list| list[:id] == id }
   if env["HTTP_X_REQUESTED_WITH"] == "XMLHttpRequest"
     "/lists"
   else
     session[:success] = "The list has been deleted."
     redirect "/lists"
   end
-end
-
-def next_todo_id(todos)
-  max = todos.map { |todo| todo[:id] }.max || 0
-  max + 1
 end
 
 # add a new todo to a list
@@ -159,7 +169,7 @@ post "/lists/:list_id/todos" do
     session[:error] = error
     erb :list, layout: :layout
   else
-    id = next_todo_id(@list[:todos])
+    id = next_element_id(@list[:todos])
     @list[:todos] << {id: id, name: text, completed: false}
 
     session[:success] = "The to-do was added."
